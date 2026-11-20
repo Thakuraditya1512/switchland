@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useRef, useState } from 'react';
-import { Link, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, Navigate, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowRight, Building2, CalendarDays, Check, CheckCircle2, Droplets, LogOut, MapPin, Menu, Search, ShoppingBasket, SlidersHorizontal, Star, X } from 'lucide-react';
 import { onAuthStateChanged } from 'firebase/auth';
 import { api } from './api';
@@ -334,7 +334,7 @@ function ComparePage() {
   return <Layout><main className="page comparePage"><div className="compareTitle"><div><div className="eyebrow">SIDE-BY-SIDE</div><h1>Compare your plots</h1></div><Link to="/properties" className="textLink">Add or change plots</Link></div><div className="compareColumns"><div className="comparePlotHead" style={{ gridTemplateColumns: `repeat(${plots.length}, minmax(0, 1fr))` }}>{plots.map((plot, i) => <div className="comparePlot" key={plot.id}><button className="removeCompare" onClick={() => remove(plot.id)} aria-label={`Remove plot ${i + 1}`}><X size={15}/></button><img src={plot.cover_image} alt={plot.title}/><span className="plotLetter">PLOT {String.fromCharCode(65 + i)}</span><b>{plot.title}</b><strong>{money(plot.price)}</strong><small className="projectionSummary">5-year scenario range<br/>{money(projectionValue(plot.price, .03, 5))}–{money(projectionValue(plot.price, .08, 5))}</small><Link to={`/property/${plot.id}`}>View plot details</Link><Link className="button primary compareVisit" to={`/property/${plot.id}#booking`}>Book site visit</Link></div>)}</div><ProjectionChart plots={plots}/>{compareRows.map(row => 'section' in row ? <div className="compareSection" key={row.section}>{row.section}</div> : <div className="compareRow" key={row.key} style={{ gridTemplateColumns: `repeat(${plots.length}, minmax(0, 1fr))` }}><div className="compareLabel">{row.label}</div>{plots.map(plot => {const values = row.better ? plots.map(item => number(item[row.key as keyof Property] as number | string | null)) : [];const measured = values.filter((value): value is number => value != null);const best = measured.length ? (row.better === 'lower' ? Math.min(...measured) : Math.max(...measured)) : null;const hasWinner = best != null && measured.some(value => value !== best);const isWinner = hasWinner && values[plots.indexOf(plot)] === best;return <div key={plot.id} className={`compareValue ${isWinner ? 'winner' : ''}`}>{row.format(plot)}</div>;})}</div>)}</div></main></Layout>;
 }
 
-function AuthPage({ mode }: { mode: 'login' | 'register' }) {
+function AuthPage({ mode, redirectTo = '/dashboard' }: { mode: 'login' | 'register'; redirectTo?: string }) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -342,8 +342,29 @@ function AuthPage({ mode }: { mode: 'login' | 'register' }) {
   const [busy, setBusy] = useState(false);
   const { setUser } = useAuth();
   const navigate = useNavigate();
-  async function submit(event: React.FormEvent) { event.preventDefault(); setBusy(true); setError(''); try { const result = mode === 'register' ? await api.register({ name, email, password }) : await api.login({ email, password }); setUser(result.user); navigate('/dashboard'); } catch (e) { setError(e instanceof Error ? e.message : 'Unable to continue'); } finally { setBusy(false); } }
-  return <Layout><main className="authWrap"><div className="authCard"><div className="brandmark large"><Building2/></div><div className="eyebrow">WELCOME TO SWITCHLAND.IN</div><h1>{mode === 'login' ? 'Welcome back' : 'Create your account'}</h1><p>{mode === 'login' ? 'Sign in to manage your plot enquiries.' : 'Keep track of your next move.'}</p><form onSubmit={submit}>{mode === 'register' && <label className="field">Full name<input required value={name} onChange={event => setName(event.target.value)} placeholder="Your name"/></label>}<label className="field">Email address<input required type="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@example.com"/></label><label className="field">Password<input required minLength={8} type="password" value={password} onChange={event => setPassword(event.target.value)} placeholder="At least 8 characters"/></label>{error && <p className="error">{error}</p>}<button className="button primary full" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'} <ArrowRight size={16}/></button></form><p className="authSwitch">{mode === 'login' ? 'New to Switchland.in? ' : 'Already have an account? '}<Link to={mode === 'login' ? '/register' : '/login'}>{mode === 'login' ? 'Create an account' : 'Sign in'}</Link></p></div></main></Layout>;
+  async function submit(event: React.FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError('');
+    try {
+      const result = mode === 'register'
+        ? await api.register({ name, email, password })
+        : await api.login({ email, password });
+      if (redirectTo === '/admin' && result.user.role !== 'admin') {
+        await api.logout();
+        setUser(null);
+        setError('This Firebase account is not on the admin allow-list. Ask the project owner to authorize its UID.');
+        return;
+      }
+      setUser(result.user);
+      navigate(redirectTo);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to continue');
+    } finally {
+      setBusy(false);
+    }
+  }
+  return <Layout><main className="authWrap"><div className="authCard"><div className="brandmark large"><Building2/></div><div className="eyebrow">WELCOME TO SWITCHLAND.IN</div><h1>{mode === 'login' ? 'Welcome back' : 'Create your account'}</h1><p>{mode === 'login' ? 'Sign in to manage your plot enquiries.' : 'Keep track of your next move.'}</p>{redirectTo === '/admin' && <p className="authHint">Use your Firebase Authentication email and password. Admin access is limited to accounts on the trusted UID allow-list.</p>}<form onSubmit={submit}>{mode === 'register' && <label className="field">Full name<input required value={name} onChange={event => setName(event.target.value)} placeholder="Your name"/></label>}<label className="field">Email address<input required type="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="you@example.com"/></label><label className="field">Password<input required minLength={8} type="password" value={password} onChange={event => setPassword(event.target.value)} placeholder="At least 8 characters"/></label>{error && <p className="error">{error}</p>}<button className="button primary full" disabled={busy}>{busy ? 'Please wait…' : mode === 'login' ? 'Sign in' : 'Create account'} <ArrowRight size={16}/></button></form><p className="authSwitch">{mode === 'login' ? 'New to Switchland.in? ' : 'Already have an account? '}<Link to={mode === 'login' ? '/register' : '/login'}>{mode === 'login' ? 'Create an account' : 'Sign in'}</Link></p></div></main></Layout>;
 }
 
 function Dashboard() {
@@ -514,7 +535,7 @@ export default function App() {
   return <LocationContext.Provider value={locations}>
     <AuthContext.Provider value={{ user, setUser }}>
       <CompareContext.Provider value={{ ids: compareIds, toggle: toggleCompare, remove: id => setCompareIds(current => current.filter(item => item !== id)) }}>
-        <Routes><Route path="/" element={<Home/>}/><Route path="/properties" element={<Properties/>}/><Route path="/property/:id" element={<PropertyDetail/>}/><Route path="/compare" element={<ComparePage/>}/><Route path="/login" element={<AuthPage mode="login"/>}/><Route path="/register" element={<AuthPage mode="register"/>}/><Route path="/dashboard" element={user ? <Dashboard/> : <AuthPage mode="login"/>}/><Route path="/admin" element={!user ? <AuthPage mode="login"/> : user.role === 'admin' ? <Admin/> : <Layout><main className="page"><h1>Admin access required</h1><p className="lead">This account is not authorized to manage land listings. Ask the project owner to add your Firebase UID to the admins collection.</p></main></Layout>}/><Route path="*" element={<Layout><main className="page"><h1>Page not found</h1><Link to="/">Return home</Link></main></Layout>}/></Routes>
+        <Routes><Route path="/" element={<Home/>}/><Route path="/properties" element={<Properties/>}/><Route path="/property/:id" element={<PropertyDetail/>}/><Route path="/compare" element={<ComparePage/>}/><Route path="/login" element={<AuthPage mode="login"/>}/><Route path="/register" element={<AuthPage mode="register"/>}/><Route path="/dashboard" element={user ? <Dashboard/> : <AuthPage mode="login"/>}/><Route path="/admin" element={!user ? <AuthPage mode="login" redirectTo="/admin"/> : user.role === 'admin' ? <Admin/> : <Layout><main className="page"><h1>Admin access required</h1><p className="lead">This account is not authorized to manage land listings. Ask the project owner to add your Firebase UID to the admins collection.</p></main></Layout>}/><Route path="*" element={<Navigate to="/" replace/>}/></Routes>
       </CompareContext.Provider>
     </AuthContext.Provider>
   </LocationContext.Provider>;
