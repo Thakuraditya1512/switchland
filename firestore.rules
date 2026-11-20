@@ -21,6 +21,21 @@ service cloud.firestore {
         && data.createdAt is timestamp;
     }
 
+    function validLocation(data) {
+      return data.keys().hasOnly([
+          'name', 'normalized_name', 'district', 'kind', 'aliases', 'state'
+        ])
+        && data.keys().hasAll([
+          'name', 'normalized_name', 'district', 'kind', 'aliases', 'state'
+        ])
+        && data.name is string && data.name.size() > 0 && data.name.size() <= 100
+        && data.normalized_name is string && data.normalized_name.size() > 0
+        && data.district is string && data.district.size() > 0 && data.district.size() <= 100
+        && data.kind in ['district', 'town', 'locality']
+        && data.aliases is list && data.aliases.size() <= 10
+        && data.state == 'Telangana';
+    }
+
     function validProperty(data) {
       return data.keys().hasOnly([
           'title', 'slug', 'description', 'property_type', 'listing_type',
@@ -98,6 +113,12 @@ service cloud.firestore {
       allow update: if isAdmin()
         && validProperty(request.resource.data)
         && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isAdmin();
+    }
+
+    match /locations/{locationId} {
+      allow read: if true;
+      allow create, update: if isAdmin() && validLocation(request.resource.data);
       allow delete: if isAdmin();
     }
 

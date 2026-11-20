@@ -25,6 +25,7 @@ import {
 import type { Booking, Property, User } from './types';
 import { auth, db, firebaseConfigError } from './firebase';
 import { demoProperties } from './demoProperties';
+import { telanganaLocations } from './telanganaLocations';
 
 function requireAuth() {
   if (!auth) throw new Error(firebaseConfigError || 'Firebase Authentication is not configured.');
@@ -183,11 +184,16 @@ export const api = {
     const waterSource = params.get('water_source')?.toLowerCase() || '';
     const approval = params.get('approval_status')?.toLowerCase() || '';
     const featuredOnly = params.get('featured') === 'true';
+    const resolveLocation = (value: string) => telanganaLocations.find(location =>
+      location.name.toLowerCase() === value || location.aliases.some(alias => alias.toLowerCase() === value)
+    );
     const properties = listed
       .filter(property => {
-        const searchable = `${property.title} ${property.locality} ${property.city}`.toLowerCase();
+        const district = telanganaLocations.find(location => location.name.toLowerCase() === property.locality.toLowerCase())?.district || '';
+        const searchable = `${property.title} ${property.locality} ${property.city} ${district}`.toLowerCase();
+        const selectedCity = resolveLocation(city);
         return (!term || searchable.includes(term))
-          && (!city || property.city.toLowerCase().includes(city))
+          && (!city || searchable.includes(city) || selectedCity?.name.toLowerCase() === district.toLowerCase())
           && (!type || property.property_type.toLowerCase() === type)
           && Number(property.price) <= maxPrice
           && (!featuredOnly || property.featured || property.is_featured)
@@ -204,6 +210,17 @@ export const api = {
           ? Number(a.price_per_sqft || Infinity) - Number(b.price_per_sqft || Infinity)
           : Number(Boolean(b.is_featured || b.featured)) - Number(Boolean(a.is_featured || a.featured)));
     return { properties, isDemo };
+  },
+  locations: async () => {
+    if (!db) return { locations: telanganaLocations, isDemo: true };
+    const snapshot = await getDocs(query(collection(db, 'locations'), orderBy('name'), limit(500)));
+    if (!snapshot.empty) {
+      return {
+        locations: snapshot.docs.map(location => ({ ...location.data(), id: location.id })) as typeof telanganaLocations,
+        isDemo: false
+      };
+    }
+    return { locations: telanganaLocations, isDemo: true };
   },
   property: async (id: string) => {
     const demo = demoProperties.find(property => property.slug === id);
@@ -275,12 +292,25 @@ export const api = {
     const database = requireDb();
     const existing = await Promise.all(demoProperties.map(property => getDoc(doc(database, 'lands', property.slug))));
     const missing = demoProperties.filter((_, index) => !existing[index].exists());
-    if (!missing.length) return { added: 0 };
+    const existingLocations = await getDocs(collection(database, 'locations'));
+    const locationIds = new Set(existingLocations.docs.map(location => location.id));
+    const missingLocations = telanganaLocations.filter(location => !locationIds.has(location.id));
+    if (!missing.length && !missingLocations.length) return { added: 0, locationsAdded: 0 };
     const batch = writeBatch(database);
     for (const property of missing) {
       batch.set(doc(database, 'lands', property.slug), { ...property, createdAt: serverTimestamp() });
     }
+    for (const location of missingLocations) {
+      batch.set(doc(database, 'locations', location.id), {
+        name: location.name,
+        normalized_name: location.name.toLowerCase(),
+        district: location.district,
+        kind: location.kind,
+        aliases: location.aliases,
+        state: 'Telangana'
+      });
+    }
     await batch.commit();
-    return { added: missing.length };
+    return { added: missing.length, locationsAdded: missingLocations.length };
   }
 };

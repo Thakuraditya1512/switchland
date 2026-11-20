@@ -53,7 +53,7 @@ npx -y firebase-tools@latest deploy --only firestore:rules,firestore:indexes
 
 Sign in to the Google account that has access to this Firebase project. Review the project ID shown before confirming a deployment. If the CLI reports that it cannot find a database, finish creating Firestore in the Firebase Console first.
 
-Rules intentionally allow public reads only for `available` plots, let users read/write only their own profile and enquiries, validate listing and enquiry fields, and reserve listing/enquiry management for admins. Admin documents cannot be created or edited by website users.
+Rules intentionally allow public reads only for `available` lands and location suggestions, let users read/write only their own profile and enquiries, validate listing and enquiry fields, and reserve listing/location management for admins. Admin documents cannot be created or edited by website users.
 
 ## Create the first admin and seed the ten demo plots
 
@@ -69,7 +69,7 @@ Rules intentionally allow public reads only for `available` plots, let users rea
 
    Do this only for trusted staff. The app checks whether `admins/{uid}` exists; the document's role field is informational. Client-side rules deny writes to this collection, so bootstrap it in the Firebase Console.
 
-4. Sign out and sign back in. Open `/admin` and choose **Seed 10 demo plots**. It inserts only missing sample documents, so it can safely be run again without overwriting existing listings.
+4. Sign out and sign back in. Open `/admin` and choose **Seed demo plots & Telangana locations**. It inserts only missing sample documents, so it can safely be run again without overwriting existing listings.
 5. Use **Add a plot** to create additional listings. Verify every title, approval, utility, and distance claim before publishing real land.
 
 ## Deploy the website to Vercel
@@ -90,11 +90,12 @@ Rules intentionally allow public reads only for `available` plots, let users rea
 ## Data model
 
 - `lands/{listingId}` — plot details; public reads are restricted to `status: "available"`.
+- `locations/{locationId}` — public autocomplete names for all 33 Telangana districts, major towns, and Hyderabad localities; only admins can add/edit/delete them.
 - `users/{uid}` — the signed-in user's name/email only; readable by that user.
 - `bookings/{bookingId}` — visit or purchase enquiries; readable by the owner and admins.
 - `admins/{uid}` — admin allow-list; bootstrap through the Firebase Console, never from the client.
 
-The listing filters run against the public Firestore results in the client (up to 100 available plots per request). When Firebase is not configured or there are no available Firestore lands, the storefront falls back to the built-in illustrative demo plots. Add server-side search or pagination before growing beyond that limit.
+The listing filters run against the public Firestore results in the client (up to 100 available plots per request). When Firebase is not configured or there are no available Firestore lands, the storefront falls back to the built-in illustrative demo plots and bundled location suggestions. Selecting a known place shows a keyless Google Maps embed and an **Open in Google Maps** link; this embed does not draw custom red boundary polygons. Add server-side search or pagination before growing beyond the listing limit.
 
 ## Existing PostgreSQL data and accounts
 
