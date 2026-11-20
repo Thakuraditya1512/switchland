@@ -19,7 +19,8 @@ Use the existing project ID: `switchland-b58a0`. No service-account key or Fireb
 2. In **Project settings → General → Your apps**, add a **Web app** (or select the existing web app). The supplied web configuration is already in `client/.env.example`; confirm it matches the app shown in the console.
 3. In **Build → Authentication → Get started → Sign-in method**, enable **Email/Password**.
 4. In **Build → Firestore Database**, create a database in **Native mode**. Choose the region closest to your customers; the database region cannot be changed later.
-5. In **Authentication → Settings → Authorized domains**, ensure `localhost`, your Vercel `*.vercel.app` hostname, and your production custom domain are allowed.
+5. In **Build → Storage**, create the default Storage bucket. This is required for admin photo uploads and may require the Firebase project to use the Blaze billing plan. Set up billing limits/alerts before using it.
+6. In **Authentication → Settings → Authorized domains**, ensure `localhost`, your Vercel `*.vercel.app` hostname, and your production custom domain are allowed.
 
 ## Local setup (Windows PowerShell)
 
@@ -48,7 +49,7 @@ The repository includes `firebase.json`, `.firebaserc`, `firestore.rules`, and `
 ```powershell
 npx -y firebase-tools@latest login
 npx -y firebase-tools@latest use switchland-b58a0
-npx -y firebase-tools@latest deploy --only firestore:rules,firestore:indexes
+npx -y firebase-tools@latest deploy --only firestore:rules,firestore:indexes,storage
 ```
 
 Sign in to the Google account that has access to this Firebase project. Review the project ID shown before confirming a deployment. If the CLI reports that it cannot find a database, finish creating Firestore in the Firebase Console first.
@@ -67,10 +68,11 @@ Rules intentionally allow public reads only for `available` lands and location s
    Field: role (string) = admin
    ```
 
-   Do this only for trusted staff. The app checks whether `admins/{uid}` exists; the document's role field is informational. Client-side rules deny writes to this collection, so bootstrap it in the Firebase Console.
+   Do this only for trusted staff. Firestore checks whether `admins/{uid}` exists; Storage upload rules also require its `role` field to equal `admin`. Client-side rules deny writes to this collection, so bootstrap it in the Firebase Console. Never hardcode an admin password or grant admin access based on a username/email alone; only add trusted Firebase Authentication UIDs. If an admin password was shared or exposed, rotate it in Firebase Authentication.
 
 4. Sign out and sign back in. Open `/admin` and choose **Seed demo plots & Telangana locations**. It inserts only missing sample documents, so it can safely be run again without overwriting existing listings.
-5. Use **Add a plot** to create additional listings. Verify every title, approval, utility, and distance claim before publishing real land.
+5. Use **Add a plot** to create listings with plot specs, water/market distances, GPS coordinates, a cover photo, gallery images, and an optional true 360° panorama. On supported phones, the cover-photo chooser can open the camera. A regular camera photo is not a 360° panorama. Uploads accept image files up to 25 MB each.
+6. The listing dashboard shows published lands and lets an admin mark them available or sold. Verify every title, approval, utility, distance, and map pin before publishing real land.
 
 ## Deploy the website to Vercel
 
@@ -83,9 +85,10 @@ Rules intentionally allow public reads only for `available` lands and location s
    VITE_FIREBASE_AUTH_DOMAIN=<authDomain from Firebase web app config>
    VITE_FIREBASE_PROJECT_ID=switchland-b58a0
    VITE_FIREBASE_APP_ID=<appId from Firebase web app config>
+   VITE_FIREBASE_STORAGE_BUCKET=switchland-b58a0.firebasestorage.app
    ```
 
-4. Redeploy after adding or changing environment variables. If a deployment still shows “Failed to fetch,” confirm the deployment uses the `client` root and new build, the four variables match the web app, Authentication/Firestore are enabled, and the Firestore rules above were deployed.
+4. Redeploy after adding or changing environment variables. If a deployment still shows “Failed to fetch,” confirm the deployment uses the `client` root and new build, all five variables match the web app, Authentication/Firestore/Storage are enabled, and the Firebase rules above were deployed.
 
 ## Data model
 
@@ -94,6 +97,7 @@ Rules intentionally allow public reads only for `available` lands and location s
 - `users/{uid}` — the signed-in user's name/email only; readable by that user.
 - `bookings/{bookingId}` — visit or purchase enquiries; readable by the owner and admins.
 - `admins/{uid}` — admin allow-list; bootstrap through the Firebase Console, never from the client.
+- Land documents may include GPS coordinates, gallery image URLs, and a 360° panorama URL. Uploaded media is stored under `lands/{listingId}/` in Firebase Storage; the public storefront can read media, but only allow-listed admins can upload or delete it.
 
 The listing filters run against the public Firestore results in the client (up to 100 available plots per request). When Firebase is not configured or there are no available Firestore lands, the storefront falls back to the built-in illustrative demo plots and bundled location suggestions. Selecting a known place shows a keyless Google Maps embed and an **Open in Google Maps** link; this embed does not draw custom red boundary polygons. Add server-side search or pagination before growing beyond the listing limit.
 

@@ -355,15 +355,30 @@ function Dashboard() {
 
 function Admin() {
   const [items, setItems] = useState<Booking[]>([]);
+  const [properties, setProperties] = useState<Property[]>([]);
   const [error, setError] = useState('');
   const [notice, setNotice] = useState('');
-  function refresh() { api.adminBookings().then(result => setItems(result.bookings)).catch(e => setError(e.message)); }
+  const [busy, setBusy] = useState(false);
+  const [locating, setLocating] = useState(false);
+  const [coordinates, setCoordinates] = useState({ latitude: '', longitude: '' });
+  const [locationNotice, setLocationNotice] = useState('');
+  async function refresh() {
+    try {
+      const [bookingResult, propertyResult] = await Promise.all([api.adminBookings(), api.adminProperties()]);
+      setItems(bookingResult.bookings);
+      setProperties(propertyResult.properties);
+      setError('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to load admin data.');
+    }
+  }
   useEffect(() => { refresh(); }, []);
   async function seedDemo() {
     setNotice('');
     try {
       const result = await api.seedDemoProperties();
       setNotice(`Added ${result.added} demo plots and ${result.locationsAdded} Telangana locations.`);
+      await refresh();
     }
     catch (e) { setNotice(e instanceof Error ? e.message : 'Unable to seed demo plots.'); }
   }
@@ -373,11 +388,93 @@ function Admin() {
     const data = Object.fromEntries(new FormData(form).entries());
     const payload: Record<string, unknown> = { ...data, property_type: 'Plot', listing_type: 'sale', bedrooms: 0, bathrooms: 0, area_sqft: Number(data.plot_area_sqft), featured: data.is_featured === 'true', is_featured: data.is_featured === 'true' };
     for (const key of ['price', 'plot_area_sqft', 'price_per_sqft', 'road_width_ft', 'groundwater_depth_ft', 'water_availability_rating', 'shopping_center_distance_km', 'vegetable_market_distance_km', 'main_road_distance_km']) payload[key] = data[key] ? Number(data[key]) : null;
-    try { await api.createProperty(payload); setNotice('Plot created successfully.'); form.reset(); refresh(); }
-    catch (e) { setNotice(e instanceof Error ? e.message : 'Unable to create plot'); }
+    payload.latitude = data.latitude ? Number(data.latitude) : null;
+    payload.longitude = data.longitude ? Number(data.longitude) : null;
+    const coverFile = (form.elements.namedItem('cover_file') as HTMLInputElement).files?.[0];
+    const panoramaFile = (form.elements.namedItem('panorama_file') as HTMLInputElement).files?.[0];
+    const galleryFiles = Array.from((form.elements.namedItem('gallery_files') as HTMLInputElement).files || []);
+    delete payload.cover_file;
+    delete payload.panorama_file;
+    delete payload.gallery_files;
+    setBusy(true);
+    setNotice('');
+    try {
+      const titleSlug = String(data.title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'land';
+      const uploadId = `${titleSlug}-${Date.now().toString(36)}`;
+      if (coverFile) payload.cover_image = await api.uploadLandImage(coverFile, uploadId, 'cover');
+      if (!String(payload.cover_image || '').trim()) throw new Error('Add a cover image URL or upload a cover photo.');
+      payload.gallery_images = await Promise.all(galleryFiles.slice(0, 20).map(file => api.uploadLandImage(file, uploadId, 'gallery')));
+      payload.panorama_image = panoramaFile ? await api.uploadLandImage(panoramaFile, uploadId, 'panorama') : null;
+      await api.createProperty(payload);
+      setNotice('Plot created successfully.');
+      form.reset();
+      setCoordinates({ latitude: '', longitude: '' });
+      setLocationNotice('');
+      await refresh();
+    } catch (e) {
+      setNotice(e instanceof Error ? e.message : 'Unable to create plot');
+    } finally {
+      setBusy(false);
+    }
   }
   async function change(id: string, status: string) { try { await api.updateBooking(id, status); refresh(); } catch (e) { setError(e instanceof Error ? e.message : 'Unable to update'); } }
-  return <Layout><main className="page"><div className="eyebrow">MANAGEMENT CONSOLE</div><h1>Admin dashboard</h1><p className="lead">Manage incoming enquiries and add land listings.</p>{error && <p className="error">{error}</p>}<div className="adminGrid"><section className="adminPanel"><h2>Recent enquiries</h2>{items.map(booking => <div className="bookingRow" key={booking.id}><div><b>{booking.property_title}</b><p>{booking.booking_type.replace('_', ' ')} · {booking.status}</p><small>{booking.message || 'No message provided'}</small></div><select value={booking.status} onChange={event => change(booking.id, event.target.value)}><option value="pending">Pending</option><option value="contacted">Contacted</option><option value="confirmed">Confirmed</option><option value="closed">Closed</option></select></div>)}{!items.length && <p>No enquiries received yet.</p>}</section><section className="adminPanel"><h2>Add a plot</h2><button className="button primary full" type="button" onClick={seedDemo}>Seed demo plots & Telangana locations</button>{notice && <p>{notice}</p>}<form onSubmit={add}><label className="field">Plot title<input name="title" required minLength={4}/></label><label className="field">Price (INR)<input name="price" required type="number" min="1"/></label><div className="formPair"><label className="field">City<input name="city" required defaultValue="Hyderabad"/></label><label className="field">Locality<input name="locality" required/></label></div><div className="formPair"><label className="field">Plot area (sq.ft.)<input name="plot_area_sqft" required type="number" min="1"/></label><label className="field">Price / sq.ft.<input name="price_per_sqft" type="number" min="1"/></label></div><div className="formPair"><label className="field">Facing<input name="facing" placeholder="East"/></label><label className="field">Road width (ft)<input name="road_width_ft" type="number" min="1"/></label></div><label className="field">Approval status<input name="approval_status" placeholder="HMDA Approved"/></label><label className="field">Water source<input name="water_source" required placeholder="Municipal + Borewell"/></label><div className="formPair"><label className="field">Groundwater depth (ft)<input name="groundwater_depth_ft" type="number" min="1"/></label><label className="field">Water rating (1–5)<input name="water_availability_rating" type="number" min="1" max="5"/></label></div><label className="field">Shopping center name<input name="shopping_center_name" required/></label><div className="formPair"><label className="field">Distance (km)<input name="shopping_center_distance_km" required type="number" min="0" step="0.1"/></label><label className="field">Vegetable market<input name="vegetable_market_name" required/></label></div><div className="formPair"><label className="field">Market distance (km)<input name="vegetable_market_distance_km" required type="number" min="0" step="0.1"/></label><label className="field">Main road (km)<input name="main_road_distance_km" type="number" min="0" step="0.1"/></label></div><label className="field">Image URL<input name="cover_image" type="url" required defaultValue="https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=1200&q=85"/></label><label className="field">Description<textarea name="description" required minLength={10} rows={3}/></label><label className="field inlineField"><input name="is_featured" type="checkbox" value="true"/> Feature this plot</label><input type="hidden" name="area_sqft" value="1200"/><button className="button primary full">Publish plot</button></form></section></div></main></Layout>;
+  async function updateListingStatus(id: string, status: 'available' | 'sold') {
+    try {
+      await api.updatePropertyStatus(id, status);
+      await refresh();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Unable to update listing status.');
+    }
+  }
+  function useCurrentLocation() {
+    if (!navigator.geolocation) {
+      setLocationNotice('Location access is not available in this browser.');
+      return;
+    }
+    setLocating(true);
+    setLocationNotice('Requesting location permission…');
+    navigator.geolocation.getCurrentPosition(
+      position => {
+        setCoordinates({
+          latitude: position.coords.latitude.toFixed(6),
+          longitude: position.coords.longitude.toFixed(6)
+        });
+        setLocationNotice('GPS pin captured. Confirm it marks the plot before publishing.');
+        setLocating(false);
+      },
+      reason => {
+        setLocationNotice(reason.message || 'Could not get your location. Check browser permission and HTTPS.');
+        setLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  }
+  return <Layout><main className="page"><div className="eyebrow">MANAGEMENT CONSOLE</div><h1>Admin dashboard</h1><p className="lead">Manage enquiries, publish verified land details, and upload listing media.</p>{error && <p className="error">{error}</p>}<div className="adminGrid">
+    <section className="adminPanel"><h2>Recent enquiries</h2>{items.map(booking => <div className="bookingRow" key={booking.id}><div><b>{booking.property_title}</b><p>{booking.booking_type.replace('_', ' ')} · {booking.status}</p><small>{booking.message || 'No message provided'}</small></div><select value={booking.status} onChange={event => change(booking.id, event.target.value)}><option value="pending">Pending</option><option value="contacted">Contacted</option><option value="confirmed">Confirmed</option><option value="closed">Closed</option></select></div>)}{!items.length && <p>No enquiries received yet.</p>}</section>
+    <section className="adminPanel"><h2>Add a plot</h2><button className="button primary full" type="button" onClick={seedDemo}>Seed demo plots & Telangana locations</button>{notice && <p className={notice.includes('successfully') || notice.startsWith('Added') ? 'success' : 'error'}>{notice}</p>}<form onSubmit={add}>
+      <label className="field">Plot title<input name="title" required minLength={4}/></label>
+      <label className="field">Price (INR)<input name="price" required type="number" min="1"/></label>
+      <div className="formPair"><label className="field">City<input name="city" required defaultValue="Hyderabad"/></label><label className="field">Locality<input name="locality" required/></label></div>
+      <div className="formPair"><label className="field">Plot area (sq.ft.)<input name="plot_area_sqft" required type="number" min="1"/></label><label className="field">Price / sq.ft.<input name="price_per_sqft" type="number" min="1"/></label></div>
+      <div className="formPair"><label className="field">Facing<input name="facing" placeholder="East"/></label><label className="field">Road width (ft)<input name="road_width_ft" type="number" min="1"/></label></div>
+      <label className="field">Approval status<input name="approval_status" placeholder="HMDA Approved"/></label>
+      <label className="field">Water source<input name="water_source" required placeholder="Municipal + Borewell"/></label>
+      <div className="formPair"><label className="field">Groundwater depth (ft)<input name="groundwater_depth_ft" type="number" min="1"/></label><label className="field">Water rating (1–5)<input name="water_availability_rating" type="number" min="1" max="5"/></label></div>
+      <label className="field">Shopping center name<input name="shopping_center_name" required/></label>
+      <div className="formPair"><label className="field">Shopping center distance (km)<input name="shopping_center_distance_km" required type="number" min="0" step="0.1"/></label><label className="field">Vegetable market<input name="vegetable_market_name" required/></label></div>
+      <div className="formPair"><label className="field">Market distance (km)<input name="vegetable_market_distance_km" required type="number" min="0" step="0.1"/></label><label className="field">Main road (km)<input name="main_road_distance_km" type="number" min="0" step="0.1"/></label></div>
+      <div className="adminLocationField"><div className="formPair"><label className="field">Latitude<input name="latitude" type="number" step="any" value={coordinates.latitude} onChange={event => setCoordinates(value => ({ ...value, latitude: event.target.value }))}/></label><label className="field">Longitude<input name="longitude" type="number" step="any" value={coordinates.longitude} onChange={event => setCoordinates(value => ({ ...value, longitude: event.target.value }))}/></label></div><button className="button secondary full" type="button" onClick={useCurrentLocation} disabled={locating}>{locating ? 'Getting location…' : 'Use current GPS location'}</button>{locationNotice && <small>{locationNotice}</small>}{coordinates.latitude && coordinates.longitude && <a className="textLink" href={`https://www.google.com/maps/search/?api=1&query=${coordinates.latitude}%2C${coordinates.longitude}`} target="_blank" rel="noopener noreferrer">Check this pin in Google Maps</a>}</div>
+      <label className="field">Cover photo<input name="cover_file" type="file" accept="image/*" capture="environment"/><small>On supported phones, opens the camera or photo picker. A cover photo URL below is an alternative.</small></label>
+      <label className="field">Or cover image URL<input name="cover_image" type="url" placeholder="https://…"/></label>
+      <label className="field">Additional photos<input name="gallery_files" type="file" accept="image/*" multiple/><small>Up to 20 photos; maximum 25 MB per image.</small></label>
+      <label className="field">True 360° panorama<input name="panorama_file" type="file" accept="image/*"/><small>Upload an equirectangular 360° panorama. A regular camera photo is not a 360° image.</small></label>
+      <label className="field">Description<textarea name="description" required minLength={10} rows={3}/></label>
+      <label className="field inlineField"><input name="is_featured" type="checkbox" value="true"/> Feature this plot</label>
+      <input type="hidden" name="area_sqft" value="1200"/>
+      <button className="button primary full" disabled={busy}>{busy ? 'Uploading and publishing…' : 'Publish plot'}</button>
+    </form></section>
+    <section className="adminPanel adminListings"><h2>Land listings <small>{properties.length} loaded</small></h2>{properties.map(property => <article className="adminListing" key={property.id}><img src={property.cover_image} alt="" loading="lazy"/><div className="adminListingInfo"><b>{property.title}</b><span>{money(property.price)} · {area(property.plot_area_sqft ?? property.area_sqft)} sq.ft.</span><small>{property.locality}, {property.city} · {property.panorama_image ? '360° view uploaded' : 'No 360° view yet'}</small><Link to={`/property/${property.id}`} className="textLink">View listing</Link></div><select aria-label={`Listing status for ${property.title}`} value={property.status} onChange={event => updateListingStatus(property.id, event.target.value as 'available' | 'sold')}><option value="available">Available</option><option value="sold">Sold</option></select></article>)}{!properties.length && <p>No listings loaded. Use the seed button to add the sample lands.</p>}</section>
+  </div></main></Layout>;
 }
 
 export default function App() {
@@ -416,7 +513,7 @@ export default function App() {
   return <LocationContext.Provider value={locations}>
     <AuthContext.Provider value={{ user, setUser }}>
       <CompareContext.Provider value={{ ids: compareIds, toggle: toggleCompare, remove: id => setCompareIds(current => current.filter(item => item !== id)) }}>
-        <Routes><Route path="/" element={<Home/>}/><Route path="/properties" element={<Properties/>}/><Route path="/property/:id" element={<PropertyDetail/>}/><Route path="/compare" element={<ComparePage/>}/><Route path="/login" element={<AuthPage mode="login"/>}/><Route path="/register" element={<AuthPage mode="register"/>}/><Route path="/dashboard" element={user ? <Dashboard/> : <AuthPage mode="login"/>}/><Route path="/admin" element={user?.role === 'admin' ? <Admin/> : <AuthPage mode="login"/>}/><Route path="*" element={<Layout><main className="page"><h1>Page not found</h1><Link to="/">Return home</Link></main></Layout>}/></Routes>
+        <Routes><Route path="/" element={<Home/>}/><Route path="/properties" element={<Properties/>}/><Route path="/property/:id" element={<PropertyDetail/>}/><Route path="/compare" element={<ComparePage/>}/><Route path="/login" element={<AuthPage mode="login"/>}/><Route path="/register" element={<AuthPage mode="register"/>}/><Route path="/dashboard" element={user ? <Dashboard/> : <AuthPage mode="login"/>}/><Route path="/admin" element={!user ? <AuthPage mode="login"/> : user.role === 'admin' ? <Admin/> : <Layout><main className="page"><h1>Admin access required</h1><p className="lead">This account is not authorized to manage land listings. Ask the project owner to add your Firebase UID to the admins collection.</p></main></Layout>}/><Route path="*" element={<Layout><main className="page"><h1>Page not found</h1><Link to="/">Return home</Link></main></Layout>}/></Routes>
       </CompareContext.Provider>
     </AuthContext.Provider>
   </LocationContext.Provider>;
