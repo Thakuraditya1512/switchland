@@ -6,6 +6,7 @@ export type Property={
  approval_status?:string|null;water_source?:string|null;groundwater_depth_ft?:number|null;
  water_availability_rating?:number|null;shopping_center_name?:string|null;shopping_center_distance_km?:number|null;
  vegetable_market_name?:string|null;vegetable_market_distance_km?:number|null;main_road_distance_km?:number|null;
+ latitude?:number|null;longitude?:number|null;gallery_images?:string[];panorama_image?:string|null;
 };
 export type User={id:string;name:string;email:string;role:'customer'|'admin'};
 export type Booking={id:string;property_id:string;property_title?:string;booking_type:'purchase_enquiry'|'site_visit';preferred_date:string|null;message:string|null;status:string;created_at:string};

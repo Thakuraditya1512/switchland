@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@photo-sphere-viewer/core": "^5.15.1",
     "@vitejs/plugin-react": "latest",
     "firebase": "^13.4.0",
     "lucide-react": "latest",
