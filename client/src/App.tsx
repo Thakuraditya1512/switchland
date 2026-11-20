@@ -139,7 +139,7 @@ function Home() {
   const [query, setQuery] = useState('');
   const { items: locations, error: locationError } = useLocations();
   const navigate = useNavigate();
-  useEffect(() => { api.properties('?featured=true&property_type=Plot').then(result => { setItems(result.properties); setDemoMode(result.isDemo); setError(''); }).catch(e => setError(e.message)); }, []);
+  useEffect(() => { api.properties('?featured=true&property_type=Plot').then(result => { setItems(result.properties); setDemoMode(result.isDemo); setError(result.sourceError); }).catch(e => setError(e.message)); }, []);
   return <Layout>
     <section className="hero"><div className="heroContent"><div className="eyebrow"><span/> THE LAND & PLOT STORE</div><h1>Find the right<br/><em>ground to grow.</em></h1><p>Compare plots like products. Check everyday essentials, water access and the details that make a place feel right.</p><form className="searchBox" onSubmit={event => { event.preventDefault(); navigate(`/properties?q=${encodeURIComponent(query)}`); }}><Search/><LocationSearch id="home-location" value={query} onChange={setQuery} onSelect={setQuery} locations={locations} placeholder="Search plots by city or locality"/><button>Explore plots <ArrowRight size={16}/></button></form><SelectedLocationMap values={[query]} locations={locations}/><div className="heroTrust"><span><CheckCircle2 size={16}/> Plot details at a glance</span><span><CheckCircle2 size={16}/> Compare up to three plots</span><span><CheckCircle2 size={16}/> Arrange a site visit</span></div></div><div className="heroVisual"><img src="https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=1300&q=90" alt="Open green land"/><div className="visualNote"><span className="noteIcon"><MapPin/></span><div><b>Find your own space</b><small>Land with the details that matter</small></div></div></div></section>
     <section className="section" id="properties"><div className="sectionHead"><div><div className="eyebrow">A PLACE FOR EVERY PLAN</div><h2>Featured plots</h2><p>Explore land selected for location, value and everyday convenience.</p></div><Link className="textLink" to="/properties">Shop all plots <ArrowRight size={16}/></Link></div>{demoMode && <p className="demoNotice">Showing sample land. Connect Firebase and seed Firestore to save real listings and enquiries.</p>}{locationError && <p className="demoNotice">{locationError}</p>}{error && <p className="error">{error}</p>}<div className="propertyGrid">{items.length ? items.slice(0, 3).map(property => <PropertyCard key={property.id} property={property}/>) : !error && <div className="emptyState">No featured plots are available yet. Check back soon.</div>}</div></section>
@@ -169,7 +169,7 @@ function Properties() {
     if (approval) search.set('approval_status', approval);
     if (category === 'Near market') search.set('max_market_distance', '2');
     if (sort) search.set('sort', sort);
-    api.properties(`?${search}`).then(result => { setItems(result.properties); setDemoMode(result.isDemo); setError(''); }).catch(e => setError(e.message));
+    api.properties(`?${search}`).then(result => { setItems(result.properties); setDemoMode(result.isDemo); setError(result.sourceError); }).catch(e => setError(e.message));
   }, [query, city, maxPrice, water, approval, sort, category]);
   const shown = category === 'Corner plots' ? items.filter(item => item.title.toLowerCase().includes('corner')) : category === '24/7 water' ? items.filter(item => item.water_source?.toLowerCase().includes('24/7')) : items;
   const categories = ['All plots', 'Corner plots', '24/7 water', 'Near market', 'Under budget'];
@@ -346,7 +346,7 @@ export default function App() {
   useEffect(() => {
     let active = true;
     api.locations()
-      .then(result => { if (active) setLocations({ items: result.locations, error: '' }); })
+      .then(result => { if (active) setLocations({ items: result.locations, error: result.sourceError }); })
       .catch(() => {
         if (active) setLocations({
           items: telanganaLocations,

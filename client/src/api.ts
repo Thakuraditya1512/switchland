@@ -165,9 +165,15 @@ export const api = {
   properties: async (search = '') => {
     let listed: Property[];
     let isDemo = !db;
+    let sourceError = '';
     if (db) {
-      const snapshots = await getDocs(query(collection(db, 'lands'), where('status', '==', 'available'), limit(100)));
-      listed = snapshots.docs.map(mapProperty);
+      try {
+        const snapshots = await getDocs(query(collection(db, 'lands'), where('status', '==', 'available'), limit(100)));
+        listed = snapshots.docs.map(mapProperty);
+      } catch (error) {
+        listed = [];
+        sourceError = error instanceof Error ? error.message : 'Firestore could not load land listings.';
+      }
       if (!listed.length) {
         listed = demoProperties.map((property, index) => ({ ...property, id: property.slug || `demo-${index + 1}` }));
         isDemo = true;
@@ -209,18 +215,27 @@ export const api = {
         : sort === 'price_per_sqft'
           ? Number(a.price_per_sqft || Infinity) - Number(b.price_per_sqft || Infinity)
           : Number(Boolean(b.is_featured || b.featured)) - Number(Boolean(a.is_featured || a.featured)));
-    return { properties, isDemo };
+    return { properties, isDemo, sourceError };
   },
   locations: async () => {
     if (!db) return { locations: telanganaLocations, isDemo: true };
-    const snapshot = await getDocs(query(collection(db, 'locations'), orderBy('name'), limit(500)));
-    if (!snapshot.empty) {
+    try {
+      const snapshot = await getDocs(query(collection(db, 'locations'), orderBy('name'), limit(500)));
+      if (!snapshot.empty) {
+        return {
+          locations: snapshot.docs.map(location => ({ ...location.data(), id: location.id })) as typeof telanganaLocations,
+          isDemo: false,
+          sourceError: ''
+        };
+      }
+    } catch (error) {
       return {
-        locations: snapshot.docs.map(location => ({ ...location.data(), id: location.id })) as typeof telanganaLocations,
-        isDemo: false
+        locations: telanganaLocations,
+        isDemo: true,
+        sourceError: error instanceof Error ? error.message : 'Firestore could not load place suggestions.'
       };
     }
-    return { locations: telanganaLocations, isDemo: true };
+    return { locations: telanganaLocations, isDemo: true, sourceError: '' };
   },
   property: async (id: string) => {
     const demo = demoProperties.find(property => property.slug === id);
