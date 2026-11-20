@@ -401,6 +401,7 @@ function Admin() {
     try {
       const titleSlug = String(data.title).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'land';
       const uploadId = `${titleSlug}-${Date.now().toString(36)}`;
+      payload.slug = uploadId;
       if (coverFile) payload.cover_image = await api.uploadLandImage(coverFile, uploadId, 'cover');
       if (!String(payload.cover_image || '').trim()) throw new Error('Add a cover image URL or upload a cover photo.');
       payload.gallery_images = await Promise.all(galleryFiles.slice(0, 20).map(file => api.uploadLandImage(file, uploadId, 'gallery')));
@@ -486,7 +487,7 @@ export default function App() {
   useEffect(() => {
     let active = true;
     api.locations()
-      .then(result => { if (active) setLocations({ items: result.locations, error: result.sourceError }); })
+      .then(result => { if (active) setLocations({ items: result.locations, error: result.sourceError || '' }); })
       .catch(() => {
         if (active) setLocations({
           items: telanganaLocations,

@@ -257,7 +257,13 @@ export const api = {
       if (!demo) throw new Error('Plot not found or no longer available.');
       return { property: { ...demo, id } };
     }
-    const snapshot = await getDoc(doc(db, 'lands', id));
+    let snapshot;
+    try {
+      snapshot = await getDoc(doc(db, 'lands', id));
+    } catch (error) {
+      if (demo) return { property: { ...demo, id } };
+      throw error;
+    }
     if (!snapshot.exists()) {
       if (demo) return { property: { ...demo, id } };
       throw new Error('Plot not found or no longer available.');
@@ -311,8 +317,10 @@ export const api = {
   createProperty: async (body: object) => {
     await requireAdmin();
     const property = propertyDocument(body as Record<string, unknown>);
-    const created = await addDoc(collection(requireDb(), 'lands'), property);
-    return { property: { ...property, id: created.id } };
+    const listingRef = doc(requireDb(), 'lands', property.slug);
+    if ((await getDoc(listingRef)).exists()) throw new Error('A listing with this ID already exists. Please try again.');
+    await setDoc(listingRef, property);
+    return { property: { ...property, id: listingRef.id } };
   },
   updateProperty: async (id: string, body: object) => {
     await requireAdmin();
