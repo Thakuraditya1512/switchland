@@ -21,15 +21,58 @@ const number = (value?: number | string | null) => value == null ? null : Number
 const area = (value?: number | string | null) => number(value)?.toLocaleString('en-IN') ?? 'Not listed';
 const distance = (value?: number | string | null) => number(value) == null ? 'Not listed' : `${Number(value).toFixed(1)} km`;
 
-function LocationDatalist({ id, locations }: { id: string; locations: TelanganaLocation[] }) {
-  const names = new Set<string>();
-  const suggestions = locations.flatMap(location => [location.name, ...location.aliases]).filter(name => {
-    const key = name.toLowerCase();
-    if (names.has(key)) return false;
-    names.add(key);
-    return true;
-  });
-  return <datalist id={id}>{suggestions.map(name => <option key={name} value={name}/>)}</datalist>;
+function LocationSearch({ id, value, onChange, onSelect, locations, placeholder }: {
+  id: string;
+  value: string;
+  onChange: (value: string) => void;
+  onSelect: (value: string) => void;
+  locations: TelanganaLocation[];
+  placeholder: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(-1);
+  const popular = ['Hyderabad', 'Boduppal', 'Gachibowli', 'Madhapur', 'Uppal', 'Shamshabad', 'Yadagirigutta', 'Warangal'];
+  const term = value.trim().toLowerCase();
+  const suggestions = term
+    ? locations.filter(location =>
+      location.name.toLowerCase().includes(term)
+        || location.aliases.some(alias => alias.toLowerCase().includes(term))
+        || location.district.toLowerCase().includes(term)
+    ).slice(0, 8)
+    : popular.map(name => locations.find(location => location.name === name)).filter((location): location is TelanganaLocation => Boolean(location));
+  function choose(name: string) {
+    onChange(name);
+    onSelect(name);
+    setOpen(false);
+    setActiveIndex(-1);
+  }
+  function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === 'ArrowDown' && suggestions.length) {
+      event.preventDefault();
+      setOpen(true);
+      setActiveIndex(index => (index + 1) % suggestions.length);
+    } else if (event.key === 'ArrowUp' && suggestions.length) {
+      event.preventDefault();
+      setOpen(true);
+      setActiveIndex(index => index <= 0 ? suggestions.length - 1 : index - 1);
+    } else if (event.key === 'Enter' && open && activeIndex >= 0) {
+      event.preventDefault();
+      choose(suggestions[activeIndex].name);
+    } else if (event.key === 'Escape') {
+      setOpen(false);
+      setActiveIndex(-1);
+    }
+  }
+  return <div className="locationSearch">
+    <input id={id} className="locationSearchInput" role="combobox" aria-autocomplete="list" aria-expanded={open} aria-controls={`${id}-listbox`} aria-activedescendant={open && activeIndex >= 0 ? `${id}-option-${activeIndex}` : undefined} autoComplete="off" value={value} onFocus={() => setOpen(true)} onBlur={() => window.setTimeout(() => setOpen(false), 150)} onKeyDown={handleKeyDown} onChange={event => { onChange(event.target.value); setActiveIndex(-1); setOpen(true); }} placeholder={placeholder}/>
+    {open && <div className="locationOptions" id={`${id}-listbox`} role="listbox" aria-label="Telangana places">
+      <div className="locationOptionsTitle">{term ? 'Matching places' : 'Popular places'}</div>
+      {suggestions.map((location, index) => <button key={location.id} id={`${id}-option-${index}`} className={`locationOption ${index === activeIndex ? 'active' : ''}`} type="button" role="option" aria-selected={index === activeIndex} onMouseDown={event => event.preventDefault()} onClick={() => choose(location.name)}>
+        <span className="locationOptionPin"><MapPin size={16}/></span><span className="locationOptionText"><b>{location.name}</b><small>{location.kind} · {location.district} district</small></span><ArrowRight className="locationOptionArrow" size={15}/>
+      </button>)}
+      {!suggestions.length && <div className="locationNoResults">No matching place. You can still search plot listings.</div>}
+    </div>}
+  </div>;
 }
 
 function PlaceMap({ name, district }: { name: string; district: string }) {
@@ -98,7 +141,7 @@ function Home() {
   const navigate = useNavigate();
   useEffect(() => { api.properties('?featured=true&property_type=Plot').then(result => { setItems(result.properties); setDemoMode(result.isDemo); setError(''); }).catch(e => setError(e.message)); }, []);
   return <Layout>
-    <section className="hero"><div className="heroContent"><div className="eyebrow"><span/> THE LAND & PLOT STORE</div><h1>Find the right<br/><em>ground to grow.</em></h1><p>Compare plots like products. Check everyday essentials, water access and the details that make a place feel right.</p><form className="searchBox" onSubmit={event => { event.preventDefault(); navigate(`/properties?q=${encodeURIComponent(query)}`); }}><Search/><input list="telangana-location-options" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search plots by city or locality"/><button>Explore plots <ArrowRight size={16}/></button><LocationDatalist id="telangana-location-options" locations={locations}/></form><SelectedLocationMap values={[query]} locations={locations}/><div className="heroTrust"><span><CheckCircle2 size={16}/> Plot details at a glance</span><span><CheckCircle2 size={16}/> Compare up to three plots</span><span><CheckCircle2 size={16}/> Arrange a site visit</span></div></div><div className="heroVisual"><img src="https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=1300&q=90" alt="Open green land"/><div className="visualNote"><span className="noteIcon"><MapPin/></span><div><b>Find your own space</b><small>Land with the details that matter</small></div></div></div></section>
+    <section className="hero"><div className="heroContent"><div className="eyebrow"><span/> THE LAND & PLOT STORE</div><h1>Find the right<br/><em>ground to grow.</em></h1><p>Compare plots like products. Check everyday essentials, water access and the details that make a place feel right.</p><form className="searchBox" onSubmit={event => { event.preventDefault(); navigate(`/properties?q=${encodeURIComponent(query)}`); }}><Search/><LocationSearch id="home-location" value={query} onChange={setQuery} onSelect={setQuery} locations={locations} placeholder="Search plots by city or locality"/><button>Explore plots <ArrowRight size={16}/></button></form><SelectedLocationMap values={[query]} locations={locations}/><div className="heroTrust"><span><CheckCircle2 size={16}/> Plot details at a glance</span><span><CheckCircle2 size={16}/> Compare up to three plots</span><span><CheckCircle2 size={16}/> Arrange a site visit</span></div></div><div className="heroVisual"><img src="https://images.unsplash.com/photo-1500382017468-9049fed747ef?auto=format&fit=crop&w=1300&q=90" alt="Open green land"/><div className="visualNote"><span className="noteIcon"><MapPin/></span><div><b>Find your own space</b><small>Land with the details that matter</small></div></div></div></section>
     <section className="section" id="properties"><div className="sectionHead"><div><div className="eyebrow">A PLACE FOR EVERY PLAN</div><h2>Featured plots</h2><p>Explore land selected for location, value and everyday convenience.</p></div><Link className="textLink" to="/properties">Shop all plots <ArrowRight size={16}/></Link></div>{demoMode && <p className="demoNotice">Showing sample land. Connect Firebase and seed Firestore to save real listings and enquiries.</p>}{locationError && <p className="demoNotice">{locationError}</p>}{error && <p className="error">{error}</p>}<div className="propertyGrid">{items.length ? items.slice(0, 3).map(property => <PropertyCard key={property.id} property={property}/>) : !error && <div className="emptyState">No featured plots are available yet. Check back soon.</div>}</div></section>
     <section className="process" id="process"><div className="eyebrow">SIMPLE BY DESIGN</div><h2>Your next move, made clearer.</h2><div className="steps"><div><b>01</b><h3>Discover</h3><p>Filter plots by budget, approval, water availability and location.</p></div><div><b>02</b><h3>Compare</h3><p>Compare up to three plots side by side, including their everyday essentials.</p></div><div><b>03</b><h3>Visit</h3><p>Request a site visit or send an enquiry through your account.</p></div></div></section>
   </Layout>;
@@ -132,8 +175,8 @@ function Properties() {
   const categories = ['All plots', 'Corner plots', '24/7 water', 'Near market', 'Under budget'];
   return <Layout>
     <main className="page storePage"><div className="eyebrow">THE SWITCHLAND.IN COLLECTION</div><h1>Shop land & plots</h1><p className="lead">Compare land on price, water access and the places you visit every day.</p>
-      <div className="storeTools"><label className="storeSearch"><Search size={18}/><input list="telangana-location-options" value={query} onChange={event => setQuery(event.target.value)} placeholder="Search locality, city or plot"/></label><div className="categoryRail" role="group" aria-label="Plot categories">{categories.map(item => <button key={item} className={category === item ? 'categoryPill active' : 'categoryPill'} onClick={() => { setCategory(item); if (item === 'Under budget') setMaxPrice('5000000'); else if (category === 'Under budget') setMaxPrice(''); }}>{item}</button>)}</div><LocationDatalist id="telangana-location-options" locations={locations}/></div>
-      <div className="filters storeFilters"><label><MapPin size={17}/><input list="telangana-location-options" value={city} onChange={event => setCity(event.target.value)} placeholder="City, district, or locality"/></label><select value={maxPrice} onChange={event => setMaxPrice(event.target.value)}><option value="">Any budget</option><option value="5000000">Up to ₹50 lakh</option><option value="10000000">Up to ₹1 crore</option><option value="20000000">Up to ₹2 crore</option></select><select value={water} onChange={event => setWater(event.target.value)}><option value="">Any water source</option><option value="24/7 Borewell">24/7 borewell</option><option value="Municipal + Borewell">Municipal + borewell</option><option value="Tanker">Tanker access</option></select><select value={approval} onChange={event => setApproval(event.target.value)}><option value="">Any approval</option><option value="HMDA">HMDA approved</option><option value="DTCP">DTCP approved</option><option value="Clear Title">Clear title</option><option value="RERA">RERA registered</option></select><select value={sort} onChange={event => setSort(event.target.value)}><option value="">Sort: Recommended</option><option value="price_asc">Price: Low to high</option><option value="price_desc">Price: High to low</option><option value="price_per_sqft">Price per sq.ft.</option></select></div>
+      <div className="storeTools"><label className="storeSearch"><Search size={18}/><LocationSearch id="property-query" value={query} onChange={setQuery} onSelect={setQuery} locations={locations} placeholder="Search locality, city or plot"/></label><div className="categoryRail" role="group" aria-label="Plot categories">{categories.map(item => <button key={item} className={category === item ? 'categoryPill active' : 'categoryPill'} onClick={() => { setCategory(item); if (item === 'Under budget') setMaxPrice('5000000'); else if (category === 'Under budget') setMaxPrice(''); }}>{item}</button>)}</div></div>
+      <div className="filters storeFilters"><label><MapPin size={17}/><LocationSearch id="property-city" value={city} onChange={setCity} onSelect={setCity} locations={locations} placeholder="City, district, or locality"/></label><select value={maxPrice} onChange={event => setMaxPrice(event.target.value)}><option value="">Any budget</option><option value="5000000">Up to ₹50 lakh</option><option value="10000000">Up to ₹1 crore</option><option value="20000000">Up to ₹2 crore</option></select><select value={water} onChange={event => setWater(event.target.value)}><option value="">Any water source</option><option value="24/7 Borewell">24/7 borewell</option><option value="Municipal + Borewell">Municipal + borewell</option><option value="Tanker">Tanker access</option></select><select value={approval} onChange={event => setApproval(event.target.value)}><option value="">Any approval</option><option value="HMDA">HMDA approved</option><option value="DTCP">DTCP approved</option><option value="Clear Title">Clear title</option><option value="RERA">RERA registered</option></select><select value={sort} onChange={event => setSort(event.target.value)}><option value="">Sort: Recommended</option><option value="price_asc">Price: Low to high</option><option value="price_desc">Price: High to low</option><option value="price_per_sqft">Price per sq.ft.</option></select></div>
       <SelectedLocationMap values={[query, city]} locations={locations}/>
       {demoMode && <p className="demoNotice">Showing sample land and Telangana place suggestions. Seed Firestore to save live listings, locations, and enquiries.</p>}
       {locationError && <p className="demoNotice">{locationError}</p>}
