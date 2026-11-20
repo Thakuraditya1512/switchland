@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="270" height="64" viewBox="0 0 270 64" fill="none" role="img" aria-labelledby="title">
+  <title id="title">Switchland.in</title>
+  <defs>
+    <linearGradient id="land" x1="6" y1="6" x2="53" y2="55" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#214D43"/>
+      <stop offset="1" stop-color="#102F35"/>
+    </linearGradient>
+    <linearGradient id="gold" x1="20" y1="14" x2="39" y2="44" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#E9C879"/>
+      <stop offset="1" stop-color="#C99A45"/>
+    </linearGradient>
+  </defs>
+  <rect x="3" y="5" width="54" height="54" rx="16" fill="url(#land)"/>
+  <path d="M14 39.5 29.8 23 46 39.5M18.5 35v11.5h23V35M23 46.5V37h14v9.5" stroke="#F7F5EB" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M38.5 17.5h.1" stroke="url(#gold)" stroke-width="5" stroke-linecap="round"/>
+  <path d="M13 49.5c5.8-2.8 10.8-3.1 16.3-.9 5.3 2.1 10.1 1.8 17.7-1.6" stroke="url(#gold)" stroke-width="1.7" stroke-linecap="round"/>
+  <text x="69" y="37" fill="#153A36" font-family="Manrope,Arial,sans-serif" font-size="24" font-weight="800" letter-spacing="-1.1">Switchland</text>
+  <text x="198" y="37" fill="#C49543" font-family="Manrope,Arial,sans-serif" font-size="24" font-weight="700" letter-spacing="-1">.in</text>
+  <text x="70" y="51" fill="#73857E" font-family="Arial,sans-serif" font-size="7.5" font-weight="700" letter-spacing="2">LAND. LIFESTYLE. LEGACY.</text>
+</svg>
