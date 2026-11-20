@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { Link, Route, Routes, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ArrowRight, Building2, CalendarDays, Check, CheckCircle2, Droplets, LogOut, MapPin, Menu, Search, ShoppingBasket, SlidersHorizontal, Star, X } from 'lucide-react';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -6,6 +6,7 @@ import { api } from './api';
 import { auth } from './firebase';
 import type { Booking, Property, User } from './types';
 import { telanganaLocations, type TelanganaLocation } from './telanganaLocations';
+import '@photo-sphere-viewer/core/index.css';
 
 type Auth = { user: User | null; setUser: (user: User | null) => void };
 type Compare = { ids: string[]; toggle: (id: string) => void; remove: (id: string) => void };
@@ -82,6 +83,42 @@ function PlaceMap({ name, district }: { name: string; district: string }) {
     <div className="placeMapHeading"><div><MapPin size={17}/><b>{name}{district && district !== name ? `, ${district}` : ''}</b></div><a href={`https://www.google.com/maps/search/?api=1&query=${encoded}`} target="_blank" rel="noopener noreferrer">Open in Google Maps <ArrowRight size={14}/></a></div>
     <iframe title={`Google map showing ${name}, Telangana`} src={`https://www.google.com/maps?q=${encoded}&output=embed`} loading="lazy" referrerPolicy="no-referrer-when-downgrade"/>
   </section>;
+}
+
+function CoordinateMap({ latitude, longitude }: { latitude: number; longitude: number }) {
+  const coordinates = `${latitude},${longitude}`;
+  const encoded = encodeURIComponent(coordinates);
+  return <section className="placeMap" aria-label="Map for exact plot coordinates">
+    <div className="placeMapHeading"><div><MapPin size={17}/><b>Plot location pin</b></div><a href={`https://www.google.com/maps/search/?api=1&query=${encoded}`} target="_blank" rel="noopener noreferrer">Open in Google Maps <ArrowRight size={14}/></a></div>
+    <iframe title="Google map showing the exact plot coordinates" src={`https://www.google.com/maps?q=${encoded}&output=embed`} loading="lazy" referrerPolicy="no-referrer-when-downgrade"/>
+  </section>;
+}
+
+function PanoramaViewer({ src }: { src: string }) {
+  const container = useRef<HTMLDivElement>(null);
+  const [error, setError] = useState('');
+  useEffect(() => {
+    let active = true;
+    let viewer: import('@photo-sphere-viewer/core').Viewer | undefined;
+    import('@photo-sphere-viewer/core')
+      .then(({ Viewer }) => {
+        if (!active || !container.current) return;
+        viewer = new Viewer({
+          container: container.current,
+          panorama: src,
+          caption: '360° land view',
+          navbar: ['zoom', 'fullscreen']
+        });
+      })
+      .catch(reason => {
+        if (active) setError(reason instanceof Error ? reason.message : 'Unable to load the 360° panorama.');
+      });
+    return () => {
+      active = false;
+      viewer?.destroy();
+    };
+  }, [src]);
+  return <div className="panoramaFrame"><div className="panoramaViewer" ref={container}/>{error && <p className="error">{error}</p>}</div>;
 }
 
 function SelectedLocationMap({ values, locations }: { values: string[]; locations: TelanganaLocation[] }) {
@@ -217,20 +254,26 @@ function PropertyDetail() {
   const principal = Number(property.price) * 0.8;
   const monthlyRate = 0.085 / 12;
   const monthlyEmi = principal * monthlyRate * Math.pow(1 + monthlyRate, 240) / (Math.pow(1 + monthlyRate, 240) - 1);
+  const gallery = [property.cover_image, ...(property.gallery_images || [])].filter(Boolean);
   return <Layout>
     <main className="page detailPage">
       <Link to="/properties" className="backLink">← Back to plots</Link>
-      <img className="detailImage" src={property.cover_image} alt={property.title}/>
+      <div className="detailGallery">{gallery.map((image, index) => <img className="detailImage" key={`${image}-${index}`} src={image} alt={`${property.title} ${index ? `photo ${index + 1}` : 'cover'}`} loading={index ? 'lazy' : 'eager'}/>)}</div>
       <div className="detailLayout"><div>
         <div className="eyebrow">RESIDENTIAL PLOT · {property.locality.toUpperCase()}</div>
         <h1>{property.title}</h1>
         <PlaceMap name={property.locality} district={property.city}/>
+        {typeof property.latitude === 'number' && typeof property.longitude === 'number' && <CoordinateMap latitude={property.latitude} longitude={property.longitude}/>}
         <div className="detailPriceLine"><h2 className="detailPrice">{money(property.price)}</h2>{property.price_per_sqft && <span>{money(property.price_per_sqft)} / sq.ft.</span>}</div>
         <div className="estimator"><div><small>Indicative 20% token</small><b>{money(Number(property.price) * .2)}</b></div><div><small>Indicative monthly EMI*</small><b>{money(monthlyEmi)} / mo</b></div><small className="estimatorNote">*Illustrative 80% financing at 8.5% for 20 years. Actual terms depend on lender approval.</small></div>
         <h2>Key plot specifications</h2>
         <div className="detailFacts"><span>Plot area<b>{area(property.plot_area_sqft ?? property.area_sqft)} sq.ft.</b></span><span>Facing<b>{property.facing || 'Not listed'}</b></span><span>Road width<b>{property.road_width_ft ? `${property.road_width_ft} ft` : 'Not listed'}</b></span><span>Approval<b>{property.approval_status || 'Not listed'}</b></span><span>Rate<b>{property.price_per_sqft ? `${money(property.price_per_sqft)} / sq.ft.` : 'Not listed'}</b></span><span>Main road<b>{distance(property.main_road_distance_km)}</b></span></div>
         <h2>Neighborhood & daily needs</h2>
         <div className="neighborhoodCard"><div><ShoppingBasket/><span>Vegetable market<b>{property.vegetable_market_name || 'Details on request'}</b><small>{distance(property.vegetable_market_distance_km)} away</small></span></div><div><Building2/><span>Shopping center<b>{property.shopping_center_name || 'Details on request'}</b><small>{distance(property.shopping_center_distance_km)} away</small></span></div><div><Droplets/><span>Water availability<b>{property.water_source || 'Details on request'}</b><small>{property.groundwater_depth_ft ? `${property.groundwater_depth_ft} ft groundwater` : 'Groundwater depth not listed'} · {property.water_availability_rating ? `${property.water_availability_rating}/5 rating` : 'rating not listed'}</small></span></div></div>
+        <h2>360° land view</h2>
+        {property.panorama_image
+          ? <PanoramaViewer src={property.panorama_image}/>
+          : <p className="panoramaUnavailable">A genuine 360° panorama has not been uploaded for this plot yet.</p>}
         <h2>About this plot</h2><p className="description">{property.description}</p>
       </div><BookingPanel property={property}/></div>
     </main>

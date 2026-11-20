@@ -45,7 +45,8 @@ service cloud.firestore {
           'water_source', 'groundwater_depth_ft', 'water_availability_rating',
           'shopping_center_name', 'shopping_center_distance_km',
           'vegetable_market_name', 'vegetable_market_distance_km',
-          'main_road_distance_km', 'createdAt'
+          'main_road_distance_km', 'latitude', 'longitude', 'gallery_images',
+          'panorama_image', 'createdAt'
         ])
         && data.keys().hasAll([
           'title', 'slug', 'description', 'property_type', 'listing_type',
@@ -85,6 +86,10 @@ service cloud.firestore {
         && data.vegetable_market_name is string && data.vegetable_market_name.size() <= 160
         && data.vegetable_market_distance_km is number && data.vegetable_market_distance_km >= 0
         && (data.main_road_distance_km == null || (data.main_road_distance_km is number && data.main_road_distance_km >= 0))
+        && (!data.keys().hasAny(['latitude']) || data.latitude == null || (data.latitude is number && data.latitude >= -90 && data.latitude <= 90))
+        && (!data.keys().hasAny(['longitude']) || data.longitude == null || (data.longitude is number && data.longitude >= -180 && data.longitude <= 180))
+        && (!data.keys().hasAny(['gallery_images']) || (data.gallery_images is list && data.gallery_images.size() <= 20))
+        && (!data.keys().hasAny(['panorama_image']) || data.panorama_image == null || (data.panorama_image is string && data.panorama_image.size() <= 2048))
         && data.createdAt is timestamp;
     }
 

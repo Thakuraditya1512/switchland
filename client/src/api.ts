@@ -22,8 +22,9 @@ import {
   where,
   writeBatch
 } from 'firebase/firestore';
+import { getDownloadURL, ref, uploadBytes } from 'firebase/storage';
 import type { Booking, Property, User } from './types';
-import { auth, db, firebaseConfigError } from './firebase';
+import { auth, db, firebaseConfigError, storage } from './firebase';
 import { demoProperties } from './demoProperties';
 import { telanganaLocations } from './telanganaLocations';
 
@@ -35,6 +36,11 @@ function requireAuth() {
 function requireDb() {
   if (!db) throw new Error(firebaseConfigError || 'Cloud Firestore is not configured.');
   return db;
+}
+
+function requireStorage() {
+  if (!storage) throw new Error(firebaseConfigError || 'Firebase Storage is not configured.');
+  return storage;
 }
 
 function currentFirebaseUser() {
@@ -133,6 +139,14 @@ function propertyDocument(body: Record<string, unknown>) {
     vegetable_market_name: String(body.vegetable_market_name || 'Not listed'),
     vegetable_market_distance_km: numberOrNull(body.vegetable_market_distance_km) ?? 0,
     main_road_distance_km: numberOrNull(body.main_road_distance_km),
+    latitude: numberOrNull(body.latitude),
+    longitude: numberOrNull(body.longitude),
+    gallery_images: Array.isArray(body.gallery_images)
+      ? body.gallery_images.filter((image): image is string => typeof image === 'string').slice(0, 20)
+      : [],
+    panorama_image: typeof body.panorama_image === 'string' && body.panorama_image
+      ? body.panorama_image
+      : null,
     createdAt: serverTimestamp()
   };
 }
@@ -284,6 +298,11 @@ export const api = {
     const snapshots = await getDocs(query(collection(requireDb(), 'bookings'), orderBy('createdAt', 'desc')));
     return { bookings: snapshots.docs.map(mapBooking) };
   },
+  adminProperties: async () => {
+    await requireAdmin();
+    const snapshots = await getDocs(query(collection(requireDb(), 'lands'), orderBy('createdAt', 'desc'), limit(200)));
+    return { properties: snapshots.docs.map(mapProperty) };
+  },
   updateBooking: async (id: string, status: string) => {
     await requireAdmin();
     await updateDoc(doc(requireDb(), 'bookings', id), { status });
@@ -302,6 +321,20 @@ export const api = {
     await updateDoc(doc(requireDb(), 'lands', id), property);
     return { success: true };
   },
+  updatePropertyStatus: async (id: string, status: 'available' | 'sold') => {
+    await requireAdmin();
+    await updateDoc(doc(requireDb(), 'lands', id), { status });
+    return { success: true };
+  },
+  uploadLandImage: async (file: File, landId: string, kind: 'cover' | 'gallery' | 'panorama') => {
+    await requireAdmin();
+    if (!file.type.startsWith('image/')) throw new Error('Choose an image file to upload.');
+    if (file.size > 25 * 1024 * 1024) throw new Error('Each image must be smaller than 25 MB.');
+    const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '-').slice(-100) || 'image';
+    const imageRef = ref(requireStorage(), `lands/${landId}/${kind}-${Date.now()}-${safeName}`);
+    await uploadBytes(imageRef, file, { contentType: file.type });
+    return getDownloadURL(imageRef);
+  },
   seedDemoProperties: async () => {
     await requireAdmin();
     const database = requireDb();
@@ -313,7 +346,14 @@ export const api = {
     if (!missing.length && !missingLocations.length) return { added: 0, locationsAdded: 0 };
     const batch = writeBatch(database);
     for (const property of missing) {
-      batch.set(doc(database, 'lands', property.slug), { ...property, createdAt: serverTimestamp() });
+      batch.set(doc(database, 'lands', property.slug), {
+        ...property,
+        latitude: null,
+        longitude: null,
+        gallery_images: [],
+        panorama_image: null,
+        createdAt: serverTimestamp()
+      });
     }
     for (const location of missingLocations) {
       batch.set(doc(database, 'locations', location.id), {
