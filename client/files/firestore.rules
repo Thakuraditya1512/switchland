@@ -1,0 +1,18 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Land listings: anyone can read, only the Admin SDK (seed script / console) can write
+    match /lands/{id} {
+      allow read: if true;
+      allow write: if false;
+    }
+    // Enquiries: anyone can submit a valid one; nobody can read them from the browser
+    match /enquiries/{id} {
+      allow create: if request.resource.data.keys().hasOnly(['property_id','booking_type','preferred_date','message','name','phone','status','created_at'])
+        && request.resource.data.booking_type in ['site_visit','purchase_enquiry']
+        && request.resource.data.status == 'pending'
+        && request.resource.data.message.size() < 1000;
+      allow read, update, delete: if false;
+    }
+  }
+}

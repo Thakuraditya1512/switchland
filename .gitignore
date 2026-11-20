@@ -4,6 +4,8 @@ dist/
 **/dist/
 .env
 **/.env
+**/.env.*
+!**/.env.example
 *.tsbuildinfo
 .firebase/
 firebase-debug.log

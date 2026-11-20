@@ -1,0 +1,141 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function validProfile(data) {
+      return data.keys().hasOnly(['name', 'email', 'createdAt'])
+        && data.keys().hasAll(['name', 'email', 'createdAt'])
+        && data.name is string
+        && data.name.size() > 0
+        && data.name.size() <= 120
+        && data.email is string
+        && data.email == request.auth.token.email
+        && data.createdAt is timestamp;
+    }
+
+    function validProperty(data) {
+      return data.keys().hasOnly([
+          'title', 'slug', 'description', 'property_type', 'listing_type',
+          'price', 'city', 'locality', 'bedrooms', 'bathrooms', 'area_sqft',
+          'cover_image', 'status', 'featured', 'is_featured', 'plot_area_sqft',
+          'price_per_sqft', 'facing', 'road_width_ft', 'approval_status',
+          'water_source', 'groundwater_depth_ft', 'water_availability_rating',
+          'shopping_center_name', 'shopping_center_distance_km',
+          'vegetable_market_name', 'vegetable_market_distance_km',
+          'main_road_distance_km', 'createdAt'
+        ])
+        && data.keys().hasAll([
+          'title', 'slug', 'description', 'property_type', 'listing_type',
+          'price', 'city', 'locality', 'bedrooms', 'bathrooms', 'area_sqft',
+          'cover_image', 'status', 'featured', 'is_featured', 'plot_area_sqft',
+          'price_per_sqft', 'facing', 'road_width_ft', 'approval_status',
+          'water_source', 'groundwater_depth_ft', 'water_availability_rating',
+          'shopping_center_name', 'shopping_center_distance_km',
+          'vegetable_market_name', 'vegetable_market_distance_km',
+          'main_road_distance_km', 'createdAt'
+        ])
+        && data.title is string && data.title.size() > 0 && data.title.size() <= 160
+        && data.slug is string && data.slug.size() > 0 && data.slug.size() <= 180
+        && data.description is string && data.description.size() <= 5000
+        && data.property_type == 'Plot'
+        && data.listing_type == 'sale'
+        && data.price is number && data.price > 0
+        && data.city is string && data.city.size() > 0 && data.city.size() <= 120
+        && data.locality is string && data.locality.size() <= 160
+        && data.bedrooms is int && data.bedrooms == 0
+        && data.bathrooms is int && data.bathrooms == 0
+        && data.area_sqft is number && data.area_sqft > 0
+        && data.cover_image is string && data.cover_image.size() > 0 && data.cover_image.size() <= 2048
+        && data.status in ['available', 'sold']
+        && data.featured is bool
+        && data.is_featured is bool
+        && data.plot_area_sqft is number && data.plot_area_sqft > 0
+        && data.price_per_sqft is number && data.price_per_sqft > 0
+        && data.facing is string && data.facing.size() <= 80
+        && (data.road_width_ft == null || (data.road_width_ft is int && data.road_width_ft >= 0))
+        && data.approval_status is string && data.approval_status.size() <= 160
+        && data.water_source is string && data.water_source.size() <= 160
+        && (data.groundwater_depth_ft == null || (data.groundwater_depth_ft is int && data.groundwater_depth_ft >= 0))
+        && (data.water_availability_rating == null || (data.water_availability_rating is int && data.water_availability_rating >= 1 && data.water_availability_rating <= 5))
+        && data.shopping_center_name is string && data.shopping_center_name.size() <= 160
+        && data.shopping_center_distance_km is number && data.shopping_center_distance_km >= 0
+        && data.vegetable_market_name is string && data.vegetable_market_name.size() <= 160
+        && data.vegetable_market_distance_km is number && data.vegetable_market_distance_km >= 0
+        && (data.main_road_distance_km == null || (data.main_road_distance_km is number && data.main_road_distance_km >= 0))
+        && data.createdAt is timestamp;
+    }
+
+    function validBooking(data) {
+      return data.keys().hasOnly([
+          'userId', 'property_id', 'property_title', 'booking_type',
+          'preferred_date', 'message', 'status', 'createdAt'
+        ])
+        && data.keys().hasAll([
+          'userId', 'property_id', 'property_title', 'booking_type',
+          'preferred_date', 'message', 'status', 'createdAt'
+        ])
+        && data.userId is string
+        && data.property_id is string
+        && data.property_title is string && data.property_title.size() <= 160
+        && data.booking_type in ['site_visit', 'purchase_enquiry']
+        && (data.preferred_date == null || data.preferred_date is timestamp)
+        && data.message is string && data.message.size() <= 2000
+        && data.status in ['pending', 'contacted', 'confirmed', 'closed']
+        && data.createdAt is timestamp;
+    }
+
+    match /lands/{landId} {
+      allow read: if isAdmin() || resource.data.status == 'available';
+      allow create: if isAdmin() && validProperty(request.resource.data);
+      allow update: if isAdmin()
+        && validProperty(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isAdmin();
+    }
+
+    match /users/{userId} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow create: if signedIn()
+        && request.auth.uid == userId
+        && validProfile(request.resource.data);
+      allow update: if signedIn()
+        && request.auth.uid == userId
+        && validProfile(request.resource.data)
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if false;
+    }
+
+    match /admins/{userId} {
+      allow read: if signedIn() && request.auth.uid == userId;
+      allow write: if false;
+    }
+
+    match /bookings/{bookingId} {
+      allow read: if isAdmin() || (signedIn() && resource.data.userId == request.auth.uid);
+      allow create: if signedIn()
+        && request.resource.data.userId == request.auth.uid
+        && validBooking(request.resource.data)
+        && request.resource.data.status == 'pending'
+        && request.resource.data.createdAt == request.time
+        && exists(/databases/$(database)/documents/lands/$(request.resource.data.property_id))
+        && get(/databases/$(database)/documents/lands/$(request.resource.data.property_id)).data.status == 'available';
+      allow update: if isAdmin()
+        && validBooking(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status'])
+        && request.resource.data.createdAt == resource.data.createdAt;
+      allow delete: if isAdmin();
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

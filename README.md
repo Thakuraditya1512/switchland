@@ -1,86 +1,115 @@
-
 # Switchland.in — Land & Plot Store
 
-A full-stack land and plot storefront with nearby essentials comparison.
+Mobile-first land browsing and comparison for Hyderabad, Boduppal and Yadagirigutta. The current React frontend uses Firebase Authentication (email/password) and Cloud Firestore directly; Vercel hosts the frontend, while Firebase hosts authentication and data.
 
-## Included
-- React + Vite + TypeScript frontend
-- Node.js + Express + TypeScript API
-- PostgreSQL schema and seed data
-- JWT authentication (register/login)
-- Plot search, budget, approval, water and market-distance filtering
-- Side-by-side comparison for two plots
-- Property detail pages
-- Property enquiry / visit booking workflow
-- Customer dashboard for enquiries
-- Admin endpoints and role-aware property management
+> The ten sample plots are illustrative demo data. They are not verified offers, legal advice, or guarantees of title, approval, utilities, distance, availability, or value. The comparison graph shows hypothetical 3%, 5%, and 8% annual compounding scenarios, not a price forecast.
 
-> This starter records purchase enquiries and visit appointments. It does **not** transfer property ownership, provide legal verification, or collect full property purchase payments. Add a verified payment provider and legal/KYC workflows before production use.
+## What runs where
 
-## Requirements
-- Node.js 20+
-- PostgreSQL 14+
-- npm
+- **Vercel:** React/Vite website, deployed from the `client` directory.
+- **Firebase Authentication:** email/password accounts for the website.
+- **Cloud Firestore:** public plot listings, private customer profiles, enquiries, and admin roles.
+- **Legacy optional backend:** `server/` and `server/sql/` contain the earlier Express/PostgreSQL implementation. The current Firebase-connected frontend does not call that API, so PostgreSQL does not need to be deployed for the current site.
 
-## 1. Database setup
-Create a PostgreSQL database named `estatehub`, then run:
+## One-time Firebase project setup
 
-```bash
-psql -U postgres -d estatehub -f server/sql/schema.sql
-psql -U postgres -d estatehub -f server/sql/seed.sql
+Use the existing project ID: `switchland-b58a0`. No service-account key or Firebase Admin credential belongs in the browser or in Vercel.
+
+1. Open the [Firebase Console](https://console.firebase.google.com/) and select `switchland-b58a0`.
+2. In **Project settings → General → Your apps**, add a **Web app** (or select the existing web app). The supplied web configuration is already in `client/.env.example`; confirm it matches the app shown in the console.
+3. In **Build → Authentication → Get started → Sign-in method**, enable **Email/Password**.
+4. In **Build → Firestore Database**, create a database in **Native mode**. Choose the region closest to your customers; the database region cannot be changed later.
+5. In **Authentication → Settings → Authorized domains**, ensure `localhost`, your Vercel `*.vercel.app` hostname, and your production custom domain are allowed.
+
+## Local setup (Windows PowerShell)
+
+From the repository folder:
+
+```powershell
+Set-Location .\client
+npm install
+Copy-Item .env.example .env
 ```
 
-## 2. Start the backend
+The example file is prefilled with the Firebase web configuration supplied for this project. Verify it against **Project settings → Your apps**, then run the dev server:
 
-```bash
-cd server
-cp .env.example .env
-# Edit DATABASE_URL and JWT_SECRET
+```powershell
+npm run dev
+```
+
+Open the Vite URL shown in the terminal (normally `http://localhost:5173`). Restart the dev server after changing `.env`.
+
+The web API key and app ID are public client configuration, not server secrets. Firebase Security Rules protect the data. Never put a service-account JSON file, private key, or Admin SDK credential in `client/`, a `VITE_` variable, or source control.
+
+## Deploy Firestore rules and indexes
+
+The repository includes `firebase.json`, `.firebaserc`, `firestore.rules`, and `firestore.indexes.json`. After creating the Firestore database and installing Node.js, open PowerShell at the repository root and run:
+
+```powershell
+npx -y firebase-tools@latest login
+npx -y firebase-tools@latest use switchland-b58a0
+npx -y firebase-tools@latest deploy --only firestore:rules,firestore:indexes
+```
+
+Sign in to the Google account that has access to this Firebase project. Review the project ID shown before confirming a deployment. If the CLI reports that it cannot find a database, finish creating Firestore in the Firebase Console first.
+
+Rules intentionally allow public reads only for `available` plots, let users read/write only their own profile and enquiries, validate listing and enquiry fields, and reserve listing/enquiry management for admins. Admin documents cannot be created or edited by website users.
+
+## Create the first admin and seed the ten demo plots
+
+1. Start the website and create your own account through **Create account**.
+2. In Firebase Console, open **Authentication → Users**, copy your account's UID.
+3. Open **Firestore Database → Data** and create a collection named `admins`. Add a document whose document ID is that exact UID, for example:
+
+   ```text
+   Collection: admins
+   Document ID: <your Firebase Auth UID>
+   Field: role (string) = admin
+   ```
+
+   Do this only for trusted staff. The app checks whether `admins/{uid}` exists; the document's role field is informational. Client-side rules deny writes to this collection, so bootstrap it in the Firebase Console.
+
+4. Sign out and sign back in. Open `/admin` and choose **Seed 10 demo plots**. It inserts only missing sample documents, so it can safely be run again without overwriting existing listings.
+5. Use **Add a plot** to create additional listings. Verify every title, approval, utility, and distance claim before publishing real land.
+
+## Deploy the website to Vercel
+
+1. Import the repository in Vercel and set **Root Directory** to `client`.
+2. Use build command `npm run build` and output directory `dist` (Vercel normally detects Vite automatically).
+3. In **Project → Settings → Environment Variables**, add these for Production (and Preview/Development if needed):
+
+   ```text
+   VITE_FIREBASE_API_KEY=<apiKey from Firebase web app config>
+   VITE_FIREBASE_AUTH_DOMAIN=<authDomain from Firebase web app config>
+   VITE_FIREBASE_PROJECT_ID=switchland-b58a0
+   VITE_FIREBASE_APP_ID=<appId from Firebase web app config>
+   ```
+
+4. Redeploy after adding or changing environment variables. If a deployment still shows “Failed to fetch,” confirm the deployment uses the `client` root and new build, the four variables match the web app, Authentication/Firestore are enabled, and the Firestore rules above were deployed.
+
+## Data model
+
+- `lands/{listingId}` — plot details; public reads are restricted to `status: "available"`.
+- `users/{uid}` — the signed-in user's name/email only; readable by that user.
+- `bookings/{bookingId}` — visit or purchase enquiries; readable by the owner and admins.
+- `admins/{uid}` — admin allow-list; bootstrap through the Firebase Console, never from the client.
+
+The listing filters run against the public Firestore results in the client (up to 100 available plots per request). When Firebase is not configured or there are no available Firestore lands, the storefront falls back to the built-in illustrative demo plots. Add server-side search or pagination before growing beyond that limit.
+
+## Existing PostgreSQL data and accounts
+
+Connecting Firebase does not automatically copy rows from PostgreSQL, booking history, or password hashes. This workspace has no live PostgreSQL connection/export configured, so no existing records were migrated. Export and review any listings/bookings before importing them into Firestore. Existing bcrypt password hashes cannot be converted into Firebase passwords; existing users must create/reset their Firebase Authentication passwords. Do not copy private customer data into public listing documents.
+
+## Legacy PostgreSQL/API (optional)
+
+The older backend remains under `server/`. Its setup is only needed if you intentionally restore the previous API frontend:
+
+```powershell
+Set-Location .\server
+Copy-Item .env.example .env
+# Configure DATABASE_URL and JWT_SECRET in server/.env
 npm install
 npm run dev
 ```
 
-API runs at `http://localhost:5000`; health check: `http://localhost:5000/api/health`.
-
-## 3. Start the frontend
-
-In a second terminal:
-
-```bash
-cd client
-cp .env.example .env
-npm install
-npm run dev
-```
-
-Open `http://localhost:5173`.
-
-## Demo accounts
-The seed script adds twelve illustrative plot listings, including Boduppal and Yadagirigutta. It does not create demo users. Register through the website. Seeded prices, approvals and amenity details are examples and must be independently verified. To make a user an admin, run:
-
-```sql
-UPDATE users SET role = 'admin' WHERE email = 'you@example.com';
-```
-
-Log out and back in after changing the role.
-
-## Main API
-- `GET /api/properties` — list/search properties
-- `GET /api/properties/:id` — property detail
-- `POST /api/auth/register` — create account
-- `POST /api/auth/login` — login
-- `GET /api/bookings/mine` — signed-in user's enquiries
-- `POST /api/bookings` — create purchase enquiry / visit request
-- `GET /api/admin/bookings` — admin booking list
-- `POST /api/admin/properties` — admin create property
-- `PATCH /api/admin/properties/:id` — admin update property
-- `DELETE /api/admin/properties/:id` — admin delete property
-- `PATCH /api/admin/bookings/:id` — admin update booking status
-
-## Production checklist
-- Use HTTPS and a strong unique JWT secret.
-- Add email verification, password reset, rate limiting and audit logs.
-- Use cloud image storage (e.g. S3/Cloudinary) instead of demo image URLs.
-- Add property ownership verification, RERA / local compliance checks as applicable, and legal review.
-- Add a real payment gateway only for clearly defined, refundable/non-refundable booking fees; never treat an enquiry as a completed sale.
-- Add privacy policy, terms, consent and data-retention controls.
+Vercel does not host PostgreSQL or Firestore. For this Firebase-connected version, deploy the frontend to Vercel and keep Firestore in Firebase; the Express/PostgreSQL server is not required.
